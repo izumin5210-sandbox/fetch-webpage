@@ -15,7 +15,9 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		fetcher := fetchwebpage.NewFetcher(afero.NewOsFs(), new(http.Client))
+		downloader := fetchwebpage.NewDownloader(new(http.Client))
+
+		fetcher := fetchwebpage.NewFetcher(downloader, afero.NewOsFs())
 		err := fetcher.Fetch(ctx, args[0])
 		if err != nil {
 			return fmt.Errorf("failed to fetch web page: %w", err)

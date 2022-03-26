@@ -3,8 +3,6 @@ package fetchwebpage
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 
@@ -15,29 +13,19 @@ type Fetcher interface {
 	Fetch(ctx context.Context, url string) error
 }
 
-func NewFetcher(fs afero.Fs, httpClient *http.Client) Fetcher {
+func NewFetcher(downloader Downloader, fs afero.Fs) Fetcher {
 	return &fetcherImpl{
-		httpClient: httpClient,
+		downloader: downloader,
 		fs:         fs,
 	}
 }
 
 type fetcherImpl struct {
-	httpClient *http.Client
+	downloader Downloader
 	fs         afero.Fs
 }
 
 func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, givenURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new http request: %w", err)
-	}
-	resp, err := f.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send http request: %w", err)
-	}
-	defer resp.Body.Close()
-
 	parsedURL, err := url.Parse(givenURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse given url: %w", err)
@@ -51,7 +39,7 @@ func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) error {
 	}
 	defer file.Close()
 
-	_, err = io.Copy(file, resp.Body)
+	err = f.downloader.Download(ctx, givenURL, file)
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
