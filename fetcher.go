@@ -13,6 +13,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type Fetcher interface {
@@ -76,6 +77,7 @@ func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) error {
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
+	zap.L().Info("File is created", zap.String("path", filename), zap.String("url", givenURL))
 
 	close(assetPathCh)
 	close(errCh)
@@ -96,6 +98,7 @@ func (f *fetcherImpl) downloadAndWriteFile(ctx context.Context, assetURL *url.UR
 	if err != nil {
 		return fmt.Errorf("failed to create assets directory: %w", err)
 	}
+	zap.L().Debug("Directory is created", zap.String("path", dir))
 
 	file, err := f.fs.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(0644))
 	if err != nil {
@@ -106,6 +109,7 @@ func (f *fetcherImpl) downloadAndWriteFile(ctx context.Context, assetURL *url.UR
 	if err != nil {
 		return fmt.Errorf("failed to download file: %w", err)
 	}
+	zap.L().Info("File is created", zap.String("path", filename), zap.String("url", assetURL.String()))
 
 	return nil
 }
@@ -128,6 +132,7 @@ func findAndUpdateAssetPaths(reader io.Reader, assetPathCh chan<- *url.URL, asse
 		assetPathCh <- u
 		newPath := filepath.Join(assetDirname, u.RequestURI())
 		s.SetAttr(attr, newPath)
+		zap.L().Debug("Attribute updated", zap.String("prevValue", src), zap.String("nextValue", newPath), zap.String("assetPath", u.String()))
 	}
 
 	doc.Find("img").Each(func(i int, s *goquery.Selection) {

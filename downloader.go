@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 type Downloader interface {
@@ -26,6 +28,8 @@ func (d *downloaderImpl) Download(ctx context.Context, url string, w io.Writer) 
 	if err != nil {
 		return fmt.Errorf("failed to create new http request: %w", err)
 	}
+
+	zap.L().Debug("Download is started", zap.String("url", url))
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send http request: %w", err)
@@ -36,6 +40,8 @@ func (d *downloaderImpl) Download(ctx context.Context, url string, w io.Writer) 
 	if err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
+
+	zap.L().Debug("Download is finished", zap.String("url", url))
 
 	return nil
 }
