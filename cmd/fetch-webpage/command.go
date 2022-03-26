@@ -26,6 +26,7 @@ func init() {
 	var (
 		showMetadata bool
 		outDir       string
+		parallelism  int
 	)
 
 	rootCmd = &cobra.Command{
@@ -46,7 +47,7 @@ func init() {
 				fs = afero.NewBasePathFs(fs, outDir)
 			}
 
-			downloader := fetchwebpage.NewDownloader(new(http.Client))
+			downloader := fetchwebpage.NewDownloader(new(http.Client), parallelism)
 			fetcher := fetchwebpage.NewFetcher(downloader, fs)
 
 			mdCh := make(chan *fetchwebpage.FetchMetadata, len(args))
@@ -95,6 +96,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "prints logs")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "prints more logs")
 	rootCmd.Flags().StringVar(&outDir, "out-dir", "", "output directory")
+	rootCmd.Flags().IntVarP(&parallelism, "parallel", "p", 2, "parallelism")
 }
 
 func initializeLogger() error {
