@@ -23,7 +23,10 @@ var (
 )
 
 func init() {
-	var showMetadata bool
+	var (
+		showMetadata bool
+		outDir       string
+	)
 
 	rootCmd = &cobra.Command{
 		Use: "fetch-webpage",
@@ -38,8 +41,13 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 
+			fs := afero.NewOsFs()
+			if outDir != "" {
+				fs = afero.NewBasePathFs(fs, outDir)
+			}
+
 			downloader := fetchwebpage.NewDownloader(new(http.Client))
-			fetcher := fetchwebpage.NewFetcher(downloader, afero.NewOsFs())
+			fetcher := fetchwebpage.NewFetcher(downloader, fs)
 
 			mdCh := make(chan *fetchwebpage.FetchMetadata, len(args))
 			errCh := make(chan error, len(args))
@@ -86,6 +94,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&showMetadata, "metadata", false, "prints metadata")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "prints logs")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "prints more logs")
+	rootCmd.Flags().StringVar(&outDir, "out-dir", "", "output directory")
 }
 
 func initializeLogger() error {
