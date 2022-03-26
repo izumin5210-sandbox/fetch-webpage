@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/hashicorp/go-multierror"
@@ -16,8 +16,15 @@ import (
 	"go.uber.org/zap"
 )
 
+type FetchMetadata struct {
+	URL        string
+	LinkCount  int
+	ImageCount int
+	FetchedAt  time.Time
+}
+
 type Fetcher interface {
-	Fetch(ctx context.Context, url string) error
+	Fetch(ctx context.Context, url string) (*FetchMetadata, error)
 }
 
 func NewFetcher(downloader Downloader, fs afero.Fs) Fetcher {
@@ -32,16 +39,18 @@ type fetcherImpl struct {
 	fs         afero.Fs
 }
 
-func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) error {
+func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) (*FetchMetadata, error) {
 	parsedURL, err := url.Parse(givenURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse given url: %w", err)
+		return nil, fmt.Errorf("failed to parse given url: %w", err)
 	}
+
+	fetchedAt := time.Now()
 
 	var buf bytes.Buffer
 	err = f.downloader.Download(ctx, givenURL, &buf)
 	if err != nil {
-		return fmt.Errorf("failed to download file: %w", err)
+		return nil, fmt.Errorf("failed to download file: %w", err)
 	}
 
 	filename := fmt.Sprintf("%s.html", parsedURL.Host)
@@ -72,10 +81,14 @@ func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) error {
 		}
 	}()
 
-	html, err := findAndUpdateAssetPaths(&buf, assetPathCh, assetDirname)
+	doc, err := goquery.NewDocumentFromReader(&buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse html file: %w", err)
+	}
+	html, err := findAndUpdateAssetPaths(doc, assetPathCh, assetDirname)
 	err = afero.WriteFile(f.fs, filename, []byte(html), os.FileMode(0664))
 	if err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
 	zap.L().Info("File is created", zap.String("path", filename), zap.String("url", givenURL))
 
@@ -84,10 +97,15 @@ func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) error {
 	wg.Wait()
 
 	if combinedErr != nil {
-		return combinedErr
+		return nil, combinedErr
 	}
 
-	return nil
+	return &FetchMetadata{
+		URL:        givenURL,
+		FetchedAt:  fetchedAt,
+		ImageCount: doc.Find("img").Size(),
+		LinkCount:  doc.Find("a").Size(),
+	}, nil
 }
 
 func (f *fetcherImpl) downloadAndWriteFile(ctx context.Context, assetURL *url.URL, baseDir string) error {
@@ -114,12 +132,7 @@ func (f *fetcherImpl) downloadAndWriteFile(ctx context.Context, assetURL *url.UR
 	return nil
 }
 
-func findAndUpdateAssetPaths(reader io.Reader, assetPathCh chan<- *url.URL, assetDirname string) (string, error) {
-	doc, err := goquery.NewDocumentFromReader(reader)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse html file: %w", err)
-	}
-
+func findAndUpdateAssetPaths(doc *goquery.Document, assetPathCh chan<- *url.URL, assetDirname string) (string, error) {
 	findAndUpdateAttr := func(s *goquery.Selection, attr string) {
 		src, ok := s.Attr(attr)
 		if !ok {
