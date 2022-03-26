@@ -115,14 +115,30 @@ func findAndUpdateAssetPaths(reader io.Reader, assetPathCh chan<- *url.URL, asse
 	if err != nil {
 		return "", fmt.Errorf("failed to parse html file: %w", err)
 	}
-	doc.Find("img").Each(func(i int, s *goquery.Selection) {
-		if src, ok := s.Attr("src"); ok {
-			if u, err := url.Parse(src); err == nil && !u.IsAbs() {
-				assetPathCh <- u
-				newPath := filepath.Join(assetDirname, u.RequestURI())
-				s.SetAttr("src", newPath)
-			}
+
+	findAndUpdateAttr := func(s *goquery.Selection, attr string) {
+		src, ok := s.Attr(attr)
+		if !ok {
+			return
 		}
+		u, err := url.Parse(src)
+		if err != nil || u.IsAbs() {
+			return
+		}
+		assetPathCh <- u
+		newPath := filepath.Join(assetDirname, u.RequestURI())
+		s.SetAttr(attr, newPath)
+	}
+
+	doc.Find("img").Each(func(i int, s *goquery.Selection) {
+		findAndUpdateAttr(s, "src")
+		// TODO: suport srcset
+	})
+	doc.Find("link").Each(func(i int, s *goquery.Selection) {
+		findAndUpdateAttr(s, "href")
+	})
+	doc.Find("script").Each(func(i int, s *goquery.Selection) {
+		findAndUpdateAttr(s, "src")
 	})
 
 	html, err := doc.Html()
