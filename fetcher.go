@@ -68,31 +68,38 @@ func (f *fetcherImpl) Fetch(ctx context.Context, givenURL string) (*FetchMetadat
 		}
 	}()
 
-	assetPathCh := make(chan *url.URL)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for path := range assetPathCh {
-			assetURL := parsedURL.ResolveReference(path)
-			err := f.downloadAndWriteFile(ctx, assetURL, assetDirname)
-			if err != nil {
-				errCh <- fmt.Errorf("failed to download asset: %w", err)
-			}
-		}
-	}()
-
 	doc, err := goquery.NewDocumentFromReader(&buf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse html file: %w", err)
 	}
-	html, err := findAndUpdateAssetPaths(doc, assetPathCh, assetDirname)
-	err = afero.WriteFile(f.fs, filename, []byte(html), os.FileMode(0664))
-	if err != nil {
-		return nil, fmt.Errorf("failed to write file: %w", err)
-	}
-	zap.L().Info("File is created", zap.String("path", filename), zap.String("url", givenURL))
 
-	close(assetPathCh)
+	assetPathCh := make(chan *url.URL)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(assetPathCh)
+		html, err := findAndUpdateAssetPaths(doc, assetPathCh, assetDirname)
+		err = afero.WriteFile(f.fs, filename, []byte(html), os.FileMode(0664))
+		if err != nil {
+			errCh <- fmt.Errorf("failed to write file: %w", err)
+			return
+		}
+		zap.L().Info("File is created", zap.String("path", filename), zap.String("url", givenURL))
+	}()
+
+	for path := range assetPathCh {
+		assetURL := parsedURL.ResolveReference(path)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := f.downloadAndWriteFile(ctx, assetURL, assetDirname)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to download asset: %w", err)
+			}
+		}()
+	}
+
 	close(errCh)
 	wg.Wait()
 
