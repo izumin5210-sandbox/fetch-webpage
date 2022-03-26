@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -22,6 +23,8 @@ var (
 )
 
 func init() {
+	var showMetadata bool
+
 	rootCmd = &cobra.Command{
 		Use: "fetch-webpage",
 		PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -38,6 +41,7 @@ func init() {
 			downloader := fetchwebpage.NewDownloader(new(http.Client))
 			fetcher := fetchwebpage.NewFetcher(downloader, afero.NewOsFs())
 
+			mdCh := make(chan *fetchwebpage.FetchMetadata, len(args))
 			errCh := make(chan error, len(args))
 
 			var wg sync.WaitGroup
@@ -47,14 +51,16 @@ func init() {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					err := fetcher.Fetch(ctx, url)
+					md, err := fetcher.Fetch(ctx, url)
 					if err != nil {
 						errCh <- fmt.Errorf("failed to fetch web page: %w", err)
 					}
+					mdCh <- md
 				}()
 			}
 
 			wg.Wait()
+			close(mdCh)
 			close(errCh)
 
 			var combinedErr error
@@ -62,9 +68,22 @@ func init() {
 				combinedErr = multierror.Append(combinedErr, err)
 			}
 
+			for md := range mdCh {
+				if !showMetadata {
+					continue
+				}
+				var buf bytes.Buffer
+				buf.WriteString(fmt.Sprintln(md.URL))
+				buf.WriteString(fmt.Sprintf("- num_links: %d\n", md.LinkCount))
+				buf.WriteString(fmt.Sprintf("- images: %d\n", md.ImageCount))
+				buf.WriteString(fmt.Sprintf("- last_fetched_at: %s\n", md.FetchedAt.Format(time.RFC1123)))
+				cmd.Println(buf.String())
+			}
+
 			return combinedErr
 		},
 	}
+	rootCmd.Flags().BoolVar(&showMetadata, "metadata", false, "prints metadata")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "prints logs")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "prints more logs")
 }
