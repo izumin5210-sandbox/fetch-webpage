@@ -30,7 +30,9 @@ func init() {
 	)
 
 	rootCmd = &cobra.Command{
-		Use: "fetch-webpage",
+		Use:                   "fetch-webpage [flags] url...",
+		Args:                  cobra.MinimumNArgs(1),
+		DisableFlagsInUseLine: true,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			err := initializeLogger()
 			if err != nil {
