@@ -12,5 +12,5 @@ func main() {
 }
 
 func run() error {
-	return nil
+	return rootCmd.Execute()
 }
